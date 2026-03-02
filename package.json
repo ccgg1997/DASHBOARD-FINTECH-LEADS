@@ -1,0 +1,26 @@
+{
+    "name": "lead-classification-dashboard",
+    "private": true,
+    "version": "0.1.0",
+    "type": "module",
+    "scripts": {
+        "dev": "vite --host 0.0.0.0 --port 4173",
+        "build": "tsc --noEmit && vite build",
+        "preview": "vite preview --host 0.0.0.0 --port 4173"
+    },
+    "dependencies": {
+        "@ant-design/icons": "^6.1.0",
+        "antd": "^6.3.1",
+        "invoice-route-app-monorepo": "file:../../../../Dummy/invoice-route-app",
+        "react": "^19.2.3",
+        "react-dom": "^19.2.3"
+    },
+    "devDependencies": {
+        "@types/node": "^22.14.0",
+        "@types/react": "^19.2.0",
+        "@types/react-dom": "^19.2.0",
+        "@vitejs/plugin-react": "^5.0.0",
+        "typescript": "~5.8.2",
+        "vite": "^6.2.0"
+    }
+}
