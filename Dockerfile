@@ -6,7 +6,7 @@ ARG VITE_LEADS_API_URL=/api/v1/leads
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install
+RUN npm ci --no-audit --no-fund
 
 COPY . .
 ENV VITE_LEADS_API_URL=${VITE_LEADS_API_URL}
