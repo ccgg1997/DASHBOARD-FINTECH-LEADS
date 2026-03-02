@@ -104,7 +104,6 @@ export default function App() {
   const [filter, setFilter] = useState<FilterOption>("TODOS");
   const [refreshMode, setRefreshMode] = useState<RefreshMode>("MANUAL");
   const [lastSyncAt, setLastSyncAt] = useState<string | undefined>(undefined);
-  const [fromMock, setFromMock] = useState(false);
   const [sourceMessage, setSourceMessage] = useState<string | undefined>(undefined);
   const [endpoint, setEndpoint] = useState("");
   const [activeLead, setActiveLead] = useState<LeadRecord | null>(null);
@@ -119,7 +118,6 @@ export default function App() {
     try {
       const response = await loadLeads({ refresh: forceRefresh });
       setLeads(response.leads);
-      setFromMock(response.fromMock);
       setSourceMessage(response.message);
       setEndpoint(response.endpoint);
       setLastSyncAt(new Date().toISOString());
@@ -259,7 +257,7 @@ export default function App() {
           <Card className="sider-summary" bordered={false}>
             <Text type="secondary">Total Leads</Text>
             <Title level={3}>{summary.total}</Title>
-            <Text type="secondary">{fromMock ? "Fuente mock" : "Fuente API"}</Text>
+            <Text type="secondary">Fuente API</Text>
           </Card>
         </Sider>
 
@@ -287,7 +285,7 @@ export default function App() {
                 </Button>
               </Space>
               <Space>
-                <Tag color={fromMock ? "gold" : "green"}>{fromMock ? "Mock Local" : "API Real"}</Tag>
+                <Tag color="green">API Real</Tag>
                 <Tag color={refreshMode === "AUTO_5M" ? "blue" : "default"}>
                   {refreshMode === "AUTO_5M" ? "Auto 5m" : "Manual"}
                 </Tag>
@@ -302,12 +300,12 @@ export default function App() {
           </Header>
 
           <Content className="admin-content">
-            {fromMock ? (
+            {sourceMessage ? (
               <Alert
-                type="warning"
+                type="error"
                 showIcon
-                message="Modo demo activo"
-                description={sourceMessage ? `Se usa dataset local. Motivo: ${sourceMessage}.` : "Se usa dataset local por falla del endpoint."}
+                message="Error consultando API"
+                description={sourceMessage}
                 className="top-alert"
               />
             ) : null}

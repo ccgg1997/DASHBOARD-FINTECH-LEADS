@@ -35,12 +35,10 @@ Variable de entorno:
 
 ```env
 VITE_LEADS_API_URL=/api/v1/leads
-VITE_ENABLE_MOCK_DATA=false
 ```
 
 Por defecto usa `/api/v1/leads`.
 Para forzar recalc de politicas usa query `?refresh=1` (lo maneja la UI al refrescar).
-Si `VITE_ENABLE_MOCK_DATA=false`, no se carga data demo cuando la API falla o responde vacio.
 
 ## Estructura esperada desde API
 

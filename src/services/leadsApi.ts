@@ -1,8 +1,6 @@
-﻿import { mockLeads } from "../data/mockLeads";
 import { Classification, LeadLoadResult, LeadRecord, LeadValidationSource, PolicyStep, PolicyStepResult } from "../types";
 
 const LEADS_API_URL = import.meta.env.VITE_LEADS_API_URL || "/api/v1/leads";
-const ENABLE_MOCK_DATA = String(import.meta.env.VITE_ENABLE_MOCK_DATA ?? "false").trim().toLowerCase() === "true";
 
 const CLASSIFICATION_ORDER: Record<Classification, number> = {
   NO_VIABLE: 0,
@@ -600,7 +598,6 @@ function buildLeadsApiUrl(refresh: boolean): string {
 function buildEmptyResult(endpoint: string, message?: string): LeadLoadResult {
   return {
     leads: [],
-    fromMock: false,
     endpoint,
     message
   };
@@ -624,28 +621,16 @@ export async function loadLeads(options: LoadLeadsOptions = {}): Promise<LeadLoa
     const normalized = sortLeads(rawLeads.map((item, index) => normalizeLead(item, index)));
 
     if (normalized.length === 0) {
-      if (!ENABLE_MOCK_DATA) {
-        return buildEmptyResult(endpoint, "La API no devolvio leads");
-      }
-      throw new Error("La API no devolvio leads");
+      return buildEmptyResult(endpoint, "La API no devolvio leads");
     }
 
     return {
       leads: normalized,
-      fromMock: false,
       endpoint
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error desconocido";
-    if (!ENABLE_MOCK_DATA) {
-      return buildEmptyResult(endpoint, message);
-    }
-    return {
-      leads: sortLeads(mockLeads),
-      fromMock: true,
-      endpoint,
-      message
-    };
+    return buildEmptyResult(endpoint, message);
   }
 }
 
