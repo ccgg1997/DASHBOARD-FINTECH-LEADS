@@ -519,18 +519,33 @@ function extractPolicyTrace(
       : {};
   const policia = isRecord(identidad.policia) ? identidad.policia : isRecord(base.policia) ? base.policia : {};
 
-  if (pickBoolean(ofac.en_lista_ofac, ofac.coincidencia) === true || pickBoolean(onu.posible_coincidencia) === true) {
+  const ofacHit = pickBoolean(ofac.en_lista_ofac, ofac.en_lista, ofac.coincidencia);
+  const onuHit = pickBoolean(onu.posible_coincidencia, onu.en_lista, onu.coincidencia);
+  const ofacEstado = String(pickString(ofac.estado) || "").toLowerCase();
+  const onuEstado = String(pickString(onu.estado) || "").toLowerCase();
+  const ofacConsultado = ofacEstado.includes("consultado") || typeof ofacHit === "boolean";
+  const onuConsultado = onuEstado.includes("consultado") || typeof onuHit === "boolean";
+  const huboConsultaListas = ofacConsultado || onuConsultado;
+
+  if (ofacHit === true || onuHit === true) {
     derived.push({
       regla: "Listas restrictivas OFAC/ONU",
       resultado: "DESCARTADO",
       razon: "Coincidencia positiva en listas",
-      valor: `OFAC=${pickBoolean(ofac.en_lista_ofac) ? "TRUE" : "FALSE"} / ONU=${pickBoolean(onu.posible_coincidencia) ? "TRUE" : "FALSE"}`
+      valor: `OFAC=${ofacHit ? "TRUE" : "FALSE"} / ONU=${onuHit ? "TRUE" : "FALSE"}`
+    });
+  } else if (huboConsultaListas) {
+    derived.push({
+      regla: "Listas restrictivas OFAC/ONU",
+      resultado: "APROBADO",
+      razon: "Sin coincidencia bloqueante",
+      valor: `OFAC=${ofacHit ? "TRUE" : "FALSE"} / ONU=${onuHit ? "TRUE" : "FALSE"}`
     });
   } else {
     derived.push({
       regla: "Listas restrictivas OFAC/ONU",
-      resultado: "APROBADO",
-      razon: "Sin coincidencia bloqueante"
+      resultado: "REVISION",
+      razon: "Consulta OFAC/ONU pendiente"
     });
   }
 
