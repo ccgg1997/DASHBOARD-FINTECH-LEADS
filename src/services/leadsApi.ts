@@ -1,8 +1,11 @@
+import { mockLeads } from "../data/mockLeads";
 import { Classification, LeadLoadResult, LeadRecord, LeadValidationSource, PolicyStep, PolicyStepResult } from "../types";
 
 const LEADS_API_URL = import.meta.env.VITE_LEADS_API_URL || "/api/v1/leads";
+const FORCE_MOCK_DATA = String(import.meta.env.VITE_FORCE_MOCK_DATA ?? "false").trim().toLowerCase() === "true";
 
 const CLASSIFICATION_ORDER: Record<Classification, number> = {
+  PENDIENTE: -1,
   NO_VIABLE: 0,
   VIABLE: 1,
   ALTAMENTE_VIABLE: 2
@@ -38,7 +41,12 @@ function pickBoolean(...values: unknown[]): boolean | undefined {
 }
 
 function primitiveValue(value: unknown): string | number | boolean | null | undefined {
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean" || value === null) {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) return undefined;
+    return trimmed;
+  }
+  if (typeof value === "number" || typeof value === "boolean" || value === null) {
     return value;
   }
   return undefined;
@@ -59,6 +67,10 @@ function normalizeClassification(value: unknown, scoreCredito?: number): Classif
     .toUpperCase()
     .replace(/\s+/g, "_");
 
+  if (normalized.includes("PENDIENTE") || normalized.includes("SIN_EVALUAR") || normalized.includes("PROVISIONAL")) {
+    return "PENDIENTE";
+  }
+
   // Clasificacion nativa esperada
   if (normalized.includes("NO_VIABLE")) return "NO_VIABLE";
   if (normalized.includes("ALTAMENTE_VIABLE")) return "ALTAMENTE_VIABLE";
@@ -76,7 +88,7 @@ function normalizeClassification(value: unknown, scoreCredito?: number): Classif
   if (normalized.includes("LIMPIO") || normalized.includes("HIGH") || normalized.includes("EXCELENTE")) {
     return "ALTAMENTE_VIABLE";
   }
-  if (normalized.includes("ALERTA") || normalized.includes("PENDIENTE")) {
+  if (normalized.includes("ALERTA")) {
     return "VIABLE";
   }
 
@@ -87,7 +99,7 @@ function normalizeClassification(value: unknown, scoreCredito?: number): Classif
     return "NO_VIABLE";
   }
 
-  return "VIABLE";
+  return "PENDIENTE";
 }
 
 function extractArrayPayload(payload: unknown): unknown[] {
@@ -116,9 +128,43 @@ function extractAlertas(base: Record<string, unknown>, identidad: Record<string,
 function extractCharacteristics(base: Record<string, unknown>): Record<string, string | number | boolean | null> {
   const persona = isRecord(base.persona) ? base.persona : {};
   const contacto = isRecord(base.contacto) ? base.contacto : {};
+  const financiero = isRecord(base.financiero) ? base.financiero : {};
+  const inmueble = isRecord(base.inmueble) ? base.inmueble : {};
+  const credito = isRecord(base.credito) ? base.credito : {};
   const caracteristicas = isRecord(base.caracteristicas) ? base.caracteristicas : {};
+  const validaciones = isRecord(base.validaciones) ? base.validaciones : {};
+  const inmuebleValidacion = isRecord(validaciones.inmueble_validacion) ? validaciones.inmueble_validacion : {};
+  const datosInmueble = isRecord(inmuebleValidacion.datos_inmueble) ? inmuebleValidacion.datos_inmueble : {};
+  const ctl = isRecord(validaciones.ctl) ? validaciones.ctl : {};
+
+  const getByPath = (source: Record<string, unknown>, path: string): unknown => {
+    if (!path.includes(".")) return source[path];
+
+    let current: unknown = source;
+    for (const segment of path.split(".")) {
+      if (!isRecord(current)) return undefined;
+      current = current[segment];
+    }
+    return current;
+  };
+
+  const dataSources = [caracteristicas, datosInmueble, inmuebleValidacion, ctl, credito, financiero, inmueble, contacto, persona, base];
 
   const result: Record<string, string | number | boolean | null> = {};
+  const keyAliases: Record<string, string[]> = {
+    ciudad: ["ciudad", "municipio", "ciudad_residencia", "inmueble.ciudad", "datos_inmueble.municipio", "datos_inmueble.ciudad"],
+    departamento: ["departamento", "inmueble.departamento", "datos_inmueble.departamento"],
+    direccion: ["direccion", "direccion_inmueble", "direccion_residencia", "inmueble.direccion", "datos_inmueble.direccion_inmueble"],
+    valor_inmueble: ["valor_inmueble", "valor_comercial", "estimated_value", "inmueble.valor_inmueble", "datos_inmueble.valor_comercial"],
+    tipo_inmueble: ["tipo_inmueble", "tipo_predio", "property_type", "inmueble.tipo_inmueble", "datos_inmueble.tipo_predio"],
+    score_credito: ["score_credito", "score_interno", "perfil_financiero.score_interno", "risk.score_total"],
+    ingresos_mensuales: ["ingresos_mensuales", "ingresos"],
+    cuotas_vigentes: ["cuotas_vigentes", "cuotas_creditos_vigentes"],
+    cupo_solicitado: ["cupo_solicitado", "monto_solicitado", "valor_solicitado"],
+    celular_lead: ["celular_lead", "celular", "telefono_contacto", "telefono"],
+    telefono_titular: ["telefono_titular", "telefono"],
+    origen_lead: ["origen_lead", "origen", "canal_origen", "canal", "source"]
+  };
   const keys = [
     "ciudad",
     "departamento",
@@ -133,6 +179,7 @@ function extractCharacteristics(base: Record<string, unknown>): Record<string, s
     "estrato",
     "segmento",
     "cupo_solicitado",
+    "monto_solicitado",
     "valor_inmueble",
     "tipo_inmueble",
     "plazo_meses",
@@ -140,14 +187,34 @@ function extractCharacteristics(base: Record<string, unknown>): Record<string, s
     "celular_lead",
     "telefono_titular",
     "telefono",
-    "email"
+    "email",
+    "origen_lead",
+    "direccion"
   ];
 
   for (const key of keys) {
-    const candidate = primitiveValue(caracteristicas[key] ?? contacto[key] ?? persona[key] ?? base[key]);
-    if (candidate !== undefined) {
-      result[key] = candidate;
+    const aliases = keyAliases[key] || [key];
+    for (const alias of aliases) {
+      const candidate = dataSources
+        .map((source) => primitiveValue(getByPath(source, alias)))
+        .find((value) => value !== undefined);
+      if (candidate !== undefined) {
+        result[key] = candidate;
+        break;
+      }
     }
+  }
+
+  if (result.cupo_solicitado === undefined && result.monto_solicitado !== undefined) {
+    result.cupo_solicitado = result.monto_solicitado;
+  }
+  delete result.monto_solicitado;
+
+  if (result.celular !== undefined && result.celular_lead !== undefined && String(result.celular) === String(result.celular_lead)) {
+    delete result.celular;
+  }
+  if (result.telefono !== undefined && result.telefono_titular !== undefined && String(result.telefono) === String(result.telefono_titular)) {
+    delete result.telefono;
   }
 
   return result;
@@ -287,6 +354,14 @@ function normalizePolicyStep(item: unknown, index: number): PolicyStep | null {
 }
 
 function finalClassificationStep(clasificacion: Classification): PolicyStep {
+  if (clasificacion === "PENDIENTE") {
+    return {
+      regla: "Clasificacion final",
+      resultado: "REVISION",
+      razon: "Lead pendiente de evaluacion completa",
+      valor: "PENDIENTE"
+    };
+  }
   if (clasificacion === "NO_VIABLE") {
     return {
       regla: "Clasificacion final",
@@ -495,6 +570,52 @@ function extractPolicyTrace(
   return derived;
 }
 
+function isPendingEvaluation(
+  base: Record<string, unknown>,
+  persona: Record<string, unknown>,
+  politicas: Record<string, unknown>,
+  decisionSureti: Record<string, unknown>
+): boolean {
+  const estadoPoliticas = pickString(politicas.estado);
+  const estadoLead = pickString(base.estado, base.etapa);
+  const tipoEvaluacion = pickString(politicas.tipo_evaluacion, base.tipo_evaluacion);
+  const hasDecision = Boolean(
+    pickString(
+      base.clasificacion_lead,
+      base.clasificacion,
+      base.resultado,
+      base.decision,
+      decisionSureti.clasificacion,
+      decisionSureti.decision,
+      politicas.clasificacion,
+      politicas.decision
+    )
+  );
+  const hasPolicyTrace =
+    (Array.isArray(politicas.traza) && politicas.traza.length > 0) ||
+    (Array.isArray(politicas.pasos) && politicas.pasos.length > 0) ||
+    (Array.isArray(base.politicas_evaluadas) && base.politicas_evaluadas.length > 0) ||
+    (Array.isArray(base.policy_trace) && base.policy_trace.length > 0);
+  const hasEvaluationDate = Boolean(
+    pickString(
+      politicas.fecha_evaluacion,
+      decisionSureti.fecha_decision,
+      base.fecha_validacion,
+      base.updated_at,
+      base.fecha_evaluacion
+    )
+  );
+  const hasCedula = Boolean(pickString(base.cedula, persona.cedula, base.documento));
+  const pendingByState = [estadoPoliticas, estadoLead].some((value) => String(value || "").toLowerCase().includes("pendiente"));
+  const provisionalEvaluation = String(tipoEvaluacion || "").toLowerCase().includes("provisional");
+
+  if (pendingByState) return true;
+  if (provisionalEvaluation) return true;
+  if (!hasDecision && !hasPolicyTrace && !hasEvaluationDate) return true;
+  if (!hasCedula && !hasDecision) return true;
+  return false;
+}
+
 function normalizeLead(payload: unknown, index: number): LeadRecord {
   const base = isRecord(payload) ? payload : {};
   const persona = isRecord(base.persona) ? base.persona : {};
@@ -514,7 +635,7 @@ function normalizeLead(payload: unknown, index: number): LeadRecord {
 
   const caracteristicas = extractCharacteristics(base);
   const scoreCredito = asNumber(caracteristicas.score_credito);
-  const clasificacion = normalizeClassification(
+  const clasificacionDetectada = normalizeClassification(
     base.clasificacion_lead ??
       base.clasificacion ??
       base.resultado ??
@@ -527,6 +648,9 @@ function normalizeLead(payload: unknown, index: number): LeadRecord {
       base.status,
     scoreCredito
   );
+  const clasificacion = isPendingEvaluation(base, persona, politicas, decisionSureti)
+    ? "PENDIENTE"
+    : clasificacionDetectada;
 
   const nombre =
     pickString(base.nombre, base.nombre_completo, persona.nombre_completo) ||
@@ -556,7 +680,7 @@ function normalizeLead(payload: unknown, index: number): LeadRecord {
   }
   const alertas = extractAlertas(base, identidad);
   const fuentes = extractSources(base, identidad);
-  const esApto = pickBoolean(base.es_apto, identidad.es_apto) ?? clasificacion !== "NO_VIABLE";
+  const esApto = pickBoolean(base.es_apto, identidad.es_apto) ?? (clasificacion === "VIABLE" || clasificacion === "ALTAMENTE_VIABLE");
   const politica = extractPolicyTrace(base, identidad, clasificacion, caracteristicas);
   const fechaValidacion = pickString(base.fecha_validacion, identidad.fecha_validacion, base.updated_at, base.created_at, base.fecha_evaluacion);
   const id = pickString(base.id, base._id, base.uuid, base.lead_id) || `lead-${index + 1}`;
@@ -598,6 +722,7 @@ function buildLeadsApiUrl(refresh: boolean): string {
 function buildEmptyResult(endpoint: string, message?: string): LeadLoadResult {
   return {
     leads: [],
+    fromMock: false,
     endpoint,
     message
   };
@@ -605,6 +730,14 @@ function buildEmptyResult(endpoint: string, message?: string): LeadLoadResult {
 
 export async function loadLeads(options: LoadLeadsOptions = {}): Promise<LeadLoadResult> {
   const endpoint = buildLeadsApiUrl(Boolean(options.refresh));
+  if (FORCE_MOCK_DATA) {
+    return {
+      leads: sortLeads(mockLeads),
+      fromMock: true,
+      endpoint,
+      message: "Modo mock forzado por VITE_FORCE_MOCK_DATA=true"
+    };
+  }
 
   try {
     const response = await fetch(endpoint, {
@@ -621,16 +754,27 @@ export async function loadLeads(options: LoadLeadsOptions = {}): Promise<LeadLoa
     const normalized = sortLeads(rawLeads.map((item, index) => normalizeLead(item, index)));
 
     if (normalized.length === 0) {
-      return buildEmptyResult(endpoint, "La API no devolvio leads");
+      return {
+        leads: sortLeads(mockLeads),
+        fromMock: true,
+        endpoint,
+        message: "La API no devolvio leads, se usa mock local"
+      };
     }
 
     return {
       leads: normalized,
+      fromMock: false,
       endpoint
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error desconocido";
-    return buildEmptyResult(endpoint, message);
+    return {
+      leads: sortLeads(mockLeads),
+      fromMock: true,
+      endpoint,
+      message
+    };
   }
 }
 

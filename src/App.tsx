@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Avatar,
@@ -41,7 +41,7 @@ type RefreshMode = "MANUAL" | "AUTO_5M";
 
 const { Sider, Content, Header } = Layout;
 const { Title, Text } = Typography;
-const FILTERS: FilterOption[] = ["TODOS", "NO_VIABLE", "VIABLE", "ALTAMENTE_VIABLE"];
+const FILTERS: FilterOption[] = ["TODOS", "PENDIENTE", "NO_VIABLE", "VIABLE", "ALTAMENTE_VIABLE"];
 
 const SIDE_ITEMS: MenuProps["items"] = [
   { key: "dashboard", icon: <HomeOutlined />, label: "Dashboard" },
@@ -52,12 +52,14 @@ const SIDE_ITEMS: MenuProps["items"] = [
 ];
 
 function classificationLabel(value: Classification): string {
+  if (value === "PENDIENTE") return "Pendiente";
   if (value === "NO_VIABLE") return "No Viable";
   if (value === "ALTAMENTE_VIABLE") return "Altamente Viable";
   return "Viable";
 }
 
 function classificationColor(value: Classification): string {
+  if (value === "PENDIENTE") return "gold";
   if (value === "NO_VIABLE") return "red";
   if (value === "ALTAMENTE_VIABLE") return "green";
   return "blue";
@@ -104,9 +106,15 @@ export default function App() {
   const [filter, setFilter] = useState<FilterOption>("TODOS");
   const [refreshMode, setRefreshMode] = useState<RefreshMode>("MANUAL");
   const [lastSyncAt, setLastSyncAt] = useState<string | undefined>(undefined);
+  const [fromMock, setFromMock] = useState(false);
   const [sourceMessage, setSourceMessage] = useState<string | undefined>(undefined);
   const [endpoint, setEndpoint] = useState("");
   const [activeLead, setActiveLead] = useState<LeadRecord | null>(null);
+  const leadsRef = useRef<LeadRecord[]>([]);
+
+  useEffect(() => {
+    leadsRef.current = leads;
+  }, [leads]);
 
   const fetchLeads = useCallback(async (forceRefresh: boolean, initialLoad = false) => {
     if (initialLoad) {
@@ -117,8 +125,21 @@ export default function App() {
 
     try {
       const response = await loadLeads({ refresh: forceRefresh });
-      setLeads(response.leads);
-      setSourceMessage(response.message);
+      const keepCurrentLeads =
+        response.fromMock &&
+        leadsRef.current.length > 0 &&
+        !String(response.message || "").toLowerCase().includes("forzado");
+
+      if (!keepCurrentLeads) {
+        setLeads(response.leads);
+      }
+
+      setFromMock(keepCurrentLeads ? false : response.fromMock);
+      setSourceMessage(
+        keepCurrentLeads
+          ? `No se reemplazaron los datos actuales por fallback. Motivo: ${response.message || "sin detalle"}`
+          : response.message
+      );
       setEndpoint(response.endpoint);
       setLastSyncAt(new Date().toISOString());
     } finally {
@@ -136,9 +157,9 @@ export default function App() {
 
   useEffect(() => {
     if (refreshMode !== "AUTO_5M") return;
-    void fetchLeads(true);
+    void fetchLeads(false);
     const timerId = window.setInterval(() => {
-      void fetchLeads(true);
+      void fetchLeads(false);
     }, 5 * 60 * 1000);
     return () => window.clearInterval(timerId);
   }, [refreshMode, fetchLeads]);
@@ -160,12 +181,14 @@ export default function App() {
   const summary = useMemo(() => {
     const stats = {
       total: leads.length,
+      pendiente: 0,
       noViable: 0,
       viable: 0,
       altamenteViable: 0
     };
 
     for (const lead of leads) {
+      if (lead.clasificacion === "PENDIENTE") stats.pendiente += 1;
       if (lead.clasificacion === "NO_VIABLE") stats.noViable += 1;
       if (lead.clasificacion === "VIABLE") stats.viable += 1;
       if (lead.clasificacion === "ALTAMENTE_VIABLE") stats.altamenteViable += 1;
@@ -257,7 +280,7 @@ export default function App() {
           <Card className="sider-summary" bordered={false}>
             <Text type="secondary">Total Leads</Text>
             <Title level={3}>{summary.total}</Title>
-            <Text type="secondary">Fuente API</Text>
+            <Text type="secondary">{fromMock ? "Fuente mock" : "Fuente API"}</Text>
           </Card>
         </Sider>
 
@@ -285,7 +308,7 @@ export default function App() {
                 </Button>
               </Space>
               <Space>
-                <Tag color="green">API Real</Tag>
+                <Tag color={fromMock ? "gold" : "green"}>{fromMock ? "Mock Local" : "API Real"}</Tag>
                 <Tag color={refreshMode === "AUTO_5M" ? "blue" : "default"}>
                   {refreshMode === "AUTO_5M" ? "Auto 5m" : "Manual"}
                 </Tag>
@@ -300,12 +323,12 @@ export default function App() {
           </Header>
 
           <Content className="admin-content">
-            {sourceMessage ? (
+            {fromMock ? (
               <Alert
-                type="error"
+                type="warning"
                 showIcon
-                message="Error consultando API"
-                description={sourceMessage}
+                message="Modo demo activo"
+                description={sourceMessage ? `Se usa dataset local. Motivo: ${sourceMessage}.` : "Se usa dataset local por falla del endpoint."}
                 className="top-alert"
               />
             ) : null}
@@ -314,6 +337,11 @@ export default function App() {
               <Col xs={12} lg={6}>
                 <Card>
                   <Statistic title="Total" value={summary.total} />
+                </Card>
+              </Col>
+              <Col xs={12} lg={6}>
+                <Card>
+                  <Statistic title="Pendientes" value={summary.pendiente} valueStyle={{ color: "#c99700" }} />
                 </Card>
               </Col>
               <Col xs={12} lg={6}>

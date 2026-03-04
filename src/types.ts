@@ -1,4 +1,4 @@
-export type Classification = "NO_VIABLE" | "VIABLE" | "ALTAMENTE_VIABLE";
+export type Classification = "PENDIENTE" | "NO_VIABLE" | "VIABLE" | "ALTAMENTE_VIABLE";
 
 export type PolicyStepResult = "APROBADO" | "DESCARTADO" | "REVISION";
 
@@ -34,6 +34,7 @@ export type LeadRecord = {
 
 export type LeadLoadResult = {
   leads: LeadRecord[];
+  fromMock: boolean;
   endpoint: string;
   message?: string;
 };
